@@ -2,8 +2,6 @@ linters-settings:
   gosec:
     severity: "medium"
     confidence: "medium"
-  govulncheck:
-    mode: binary
   errcheck:
     check-type-assertions: true
     check-blank: true
