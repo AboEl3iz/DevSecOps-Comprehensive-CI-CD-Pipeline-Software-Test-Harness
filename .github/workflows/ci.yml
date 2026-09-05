@@ -43,7 +43,7 @@ jobs:
           go test -v -run TestIntegration_FullFlow ./...
 
       - name: Run golangci-lint
-        uses: golangci/golangci-lint-action@971e284b635000711ef96b9654f66997a3080704 # v6.1.1
+        uses: golangci/golangci-lint-action@55c2c1448f86e01eaae002a5a3a9624417608d84 # v6.5.2
         with:
           version: v1.59.1
           working-directory: app
@@ -55,7 +55,7 @@ jobs:
           ./gitleaks detect --config=config/.gitleaks.toml --redact --verbose
 
       - name: SAST Scan (Gosec)
-        uses: securego/gosec@51f5fa867df090fa5c8b459cbff196f194131ccf # v2.20.0
+        uses: securego/gosec@6fbd381238e97e1d1f3358f0d6d65de78dcf9245 # v2.20.0
         with:
           args: '-fmt=sarif -out=gosec.sarif ./app/...'
 
@@ -148,7 +148,7 @@ jobs:
           push-to-registry: true
 
       - name: Install Cosign
-        uses: sigstore/cosign-installer@1aa8e0f2454b781fbf0fbf306a4c9533a0c57409 # v3.7.0
+        uses: sigstore/cosign-installer@dc72c7d5c4d10cd6bcb8cf6e3fd625a9e5e537da # v3.7.0
 
       - name: Keyless Image Signing (Sigstore/Fulcio/Rekor)
         run: |
@@ -177,7 +177,7 @@ jobs:
       id-token: write
     steps:
       - name: Install Cosign
-        uses: sigstore/cosign-installer@1aa8e0f2454b781fbf0fbf306a4c9533a0c57409 # v3.7.0
+        uses: sigstore/cosign-installer@dc72c7d5c4d10cd6bcb8cf6e3fd625a9e5e537da # v3.7.0
 
       - name: Verify Keyless OIDC Signature
         run: |
