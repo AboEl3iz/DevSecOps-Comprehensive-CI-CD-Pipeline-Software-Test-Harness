@@ -21,7 +21,7 @@ jobs:
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
       - name: Setup Go environment
-        uses: actions/setup-go@41dfa1015b86d393c754a7009b7a038fe994a592 # v5.1.0
+        uses: actions/setup-go@41dfa10bad2bb2ae585af6ee5bb4d7d973ad74ed # v5.1.0
         with:
           go-version: '1.22'
           check-latest: false
@@ -43,20 +43,20 @@ jobs:
           go test -v -run TestIntegration_FullFlow ./...
 
       - name: Run golangci-lint
-        uses: golangci/golangci-lint-action@971e284b635000711ef96b9654f66997a3080704 # v6.1.1
+        uses: golangci/golangci-lint-action@971e284b6050e8a5849b72094c50ab08da042db8 # v6.1.1
         with:
           version: v1.59.1
           working-directory: app
 
       - name: Secret Scan (Gitleaks)
-        uses: gitleaks/gitleaks-action@785a2104d49a7102604e135f29910d65b704c7eb # v2.3.4
+        uses: gitleaks/gitleaks-action@e6dab246340401bf53eec993b8f05aebe80ac636 # v2.3.4
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           config-path: config/.gitleaks.toml
 
       - name: SAST Scan (Gosec)
-        uses: securego/gosec@250781744158fb9d66046e7f093f18e6c43c22b9 # v2.20.0
+        uses: securego/gosec@51f5fa867df090fa5c8b459cbff196f194131ccf # v2.20.0
         with:
           args: '-fmt=sarif -out=gosec.sarif ./app/...'
 
@@ -71,7 +71,7 @@ jobs:
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
       - name: Run zizmor
-        uses: zizmorcore/zizmor-action@51e06d9a930777174dbfa3e250feaa9ad74e477f # v0.1.1
+        uses: zizmorcore/zizmor-action@f52a838cfabf134edcbaa7c8b3677dde20045018 # v0.1.1
         with:
           args: --min-severity=medium --format=sarif .github/workflows/*.yml > zizmor.sarif
         continue-on-error: true
@@ -108,7 +108,7 @@ jobs:
 
       - name: Build & Push Container Image by Digest
         id: push
-        uses: docker/build-push-action@ca877d9245402d1537745e0e356eab1d92be34c8 # v6.13.0
+        uses: docker/build-push-action@ca877d9245402d1537745e0e356eab47c3520991 # v6.13.0
         with:
           context: ./app
           file: ./app/Dockerfile
@@ -118,14 +118,14 @@ jobs:
           cache-to: type=gha,mode=max
 
       - name: Generate CycloneDX SBOM (Syft)
-        uses: anchore/sbom-action@7ccf588e3cf3cc2611714c2eeae48550fbc17552 # v0.17.9
+        uses: anchore/sbom-action@df80a981bc6edbc4e220a492d3cbe9f5547a6e75 # v0.17.9
         with:
           image: ghcr.io/${{ github.repository }}@${{ steps.push.outputs.digest }}
           format: cyclonedx-json
           output-file: sbom.cdx.json
 
       - name: Container Vulnerability Gate (Trivy)
-        uses: aquasecurity/trivy-action@18f2510ee396bbf400dbea0c74996924b132800a # v0.28.0
+        uses: aquasecurity/trivy-action@915b19bbe73b92a6cf82a1bc12b087c9a19a5fe2 # v0.28.0
         with:
           image-ref: ghcr.io/${{ github.repository }}@${{ steps.push.outputs.digest }}
           severity: CRITICAL,HIGH
@@ -133,14 +133,14 @@ jobs:
           ignore-unfixed: true
 
       - name: Attest SLSA Build Provenance
-        uses: actions/attest-build-provenance@c908681a9a217c843825f3c0516b3f9ff482ae72 # v2.2.0
+        uses: actions/attest-build-provenance@520d128f165991a6c774bcb264f323e3d70747f4 # v2.2.0
         with:
           subject-name: ghcr.io/${{ github.repository }}
           subject-digest: ${{ steps.push.outputs.digest }}
           push-to-registry: true
 
       - name: Attest CycloneDX SBOM
-        uses: actions/attest@3188849479b1836a9926cb077d853e34efdf3146 # v4.0.0
+        uses: actions/attest@c32b4b8b198b65d0bd9d63490e847ff7b53989d4 # v4.0.0
         with:
           subject-name: ghcr.io/${{ github.repository }}
           subject-digest: ${{ steps.push.outputs.digest }}
@@ -149,7 +149,7 @@ jobs:
           push-to-registry: true
 
       - name: Install Cosign
-        uses: sigstore/cosign-installer@d7d6bc7722e3daa8354c50bcb388bd794ffbed77 # v3.7.0
+        uses: sigstore/cosign-installer@1aa8e0f2454b781fbf0fbf306a4c9533a0c57409 # v3.7.0
 
       - name: Keyless Image Signing (Sigstore/Fulcio/Rekor)
         run: |
@@ -178,7 +178,7 @@ jobs:
       id-token: write
     steps:
       - name: Install Cosign
-        uses: sigstore/cosign-installer@d7d6bc7722e3daa8354c50bcb388bd794ffbed77 # v3.7.0
+        uses: sigstore/cosign-installer@1aa8e0f2454b781fbf0fbf306a4c9533a0c57409 # v3.7.0
 
       - name: Verify Keyless OIDC Signature
         run: |
@@ -194,5 +194,5 @@ jobs:
       - name: Digest-Preserving Staging Promotion
         run: |
           crane copy \
-            ghcr.io/${{ github.repository }}@${{ needs.build-scan-attest.outputs.digest }} \
-            ghcr.io/${{ github.repository }}-staging@${{ needs.build-scan-attest.outputs.digest }}
+            ghcr.io/${{ github.repository }}@${{ needs.build-sign-attest.outputs.digest }} \
+            ghcr.io/${{ github.repository }}-staging@${{ needs.build-sign-attest.outputs.digest }}
