@@ -43,17 +43,16 @@ jobs:
           go test -v -run TestIntegration_FullFlow ./...
 
       - name: Run golangci-lint
-        uses: golangci/golangci-lint-action@971e284b6050e8a5849b72094c50ab08da042db8 # v6.1.1
+        uses: golangci/golangci-lint-action@971e284b635000711ef96b9654f66997a3080704 # v6.1.1
         with:
           version: v1.59.1
           working-directory: app
 
       - name: Secret Scan (Gitleaks)
-        uses: gitleaks/gitleaks-action@e6dab246340401bf53eec993b8f05aebe80ac636 # v2.3.4
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          config-path: config/.gitleaks.toml
+        run: |
+          wget -q https://github.com/gitleaks/gitleaks/releases/download/v8.18.4/gitleaks_8.18.4_linux_x64.tar.gz
+          tar -xzf gitleaks_8.18.4_linux_x64.tar.gz
+          ./gitleaks detect --config=config/.gitleaks.toml --redact --verbose
 
       - name: SAST Scan (Gosec)
         uses: securego/gosec@51f5fa867df090fa5c8b459cbff196f194131ccf # v2.20.0
@@ -194,5 +193,5 @@ jobs:
       - name: Digest-Preserving Staging Promotion
         run: |
           crane copy \
-            ghcr.io/${{ github.repository }}@${{ needs.build-sign-attest.outputs.digest }} \
-            ghcr.io/${{ github.repository }}-staging@${{ needs.build-sign-attest.outputs.digest }}
+            ghcr.io/${{ github.repository }}@${{ needs.build-scan-attest.outputs.digest }} \
+            ghcr.io/${{ github.repository }}-staging@${{ needs.build-scan-attest.outputs.digest }}
