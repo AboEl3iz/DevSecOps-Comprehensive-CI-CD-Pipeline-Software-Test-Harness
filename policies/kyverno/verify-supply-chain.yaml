@@ -1,0 +1,41 @@
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: verify-image-supply-chain
+  annotations:
+    policies.kyverno.io/title: Verify Image Supply Chain Attestation & Signature
+    policies.kyverno.io/category: Supply Chain Security
+    policies.kyverno.io/severity: high
+    policies.kyverno.io/subject: Pod
+    policies.kyverno.io/description: >-
+      Enforces keyless Cosign signature verification, SLSA build provenance,
+      and CycloneDX SBOM attestations for images deployed to Kubernetes.
+spec:
+  validationFailureAction: Enforce
+  background: false
+  rules:
+    - name: verify-signature-provenance-sbom
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+      verifyImages:
+        - imageReferences:
+            - "ghcr.io/myorg/*"
+          type: Cosign
+          attestors:
+            - entries:
+                - keyless:
+                    subject: "https://github.com/myorg/*/.github/workflows/*.yml@refs/heads/main"
+                    issuer: "https://token.actions.githubusercontent.com"
+                    rekor:
+                      url: "https://rekor.sigstore.dev"
+          attestations:
+            - predicateType: https://slsa.dev/provenance/v1
+            - predicateType: https://cyclonedx.org/bom
+              conditions:
+                - all:
+                    - key: "{{ metadata.criticalVulns || `0` }}"
+                      operator: LessThanOrEquals
+                      value: 0

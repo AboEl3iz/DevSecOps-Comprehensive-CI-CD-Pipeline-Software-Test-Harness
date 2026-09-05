@@ -1,0 +1,198 @@
+name: secure-devsecops-pipeline
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+# Top-level least privilege default permissions
+permissions: {}
+
+jobs:
+  dev-test-and-lint:
+    name: Dev Software Testing & SAST
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Setup Go environment
+        uses: actions/setup-go@41dfa1015b86d393c754a7009b7a038fe994a592 # v5.1.0
+        with:
+          go-version: '1.22'
+          check-latest: false
+          cache-dependency-path: app/go.sum
+
+      - name: Verify Go module dependencies
+        run: |
+          cd app
+          go mod verify
+
+      - name: Run Go Unit Tests with Code Coverage
+        run: |
+          cd app
+          go test -v -race -coverprofile=coverage.out -covermode=atomic ./...
+
+      - name: Run Integration Tests
+        run: |
+          cd app
+          go test -v -run TestIntegration_FullFlow ./...
+
+      - name: Run golangci-lint
+        uses: golangci/golangci-lint-action@971e284b635000711ef96b9654f66997a3080704 # v6.1.1
+        with:
+          version: v1.59.1
+          working-directory: app
+
+      - name: Secret Scan (Gitleaks)
+        uses: gitleaks/gitleaks-action@785a2104d49a7102604e135f29910d65b704c7eb # v2.3.4
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          config-path: config/.gitleaks.toml
+
+      - name: SAST Scan (Gosec)
+        uses: securego/gosec@250781744158fb9d66046e7f093f18e6c43c22b9 # v2.20.0
+        with:
+          args: '-fmt=sarif -out=gosec.sarif ./app/...'
+
+  workflow-security:
+    name: Workflow Pinning & Security Lint
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Run zizmor
+        uses: zizmorcore/zizmor-action@51e06d9a930777174dbfa3e250feaa9ad74e477f # v0.1.1
+        with:
+          args: --min-severity=medium --format=sarif .github/workflows/*.yml > zizmor.sarif
+        continue-on-error: true
+
+  build-scan-attest:
+    name: Hermetic Build, SBOM, Sign & SLSA Attest
+    needs: [dev-test-and-lint, workflow-security]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+    outputs:
+      digest: ${{ steps.push.outputs.digest }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Lint Dockerfile (Hadolint)
+        uses: hadolint/hadolint-action@54c9adbab1582c2ef04b2016b760714a4bfde3cf # v3.1.0
+        with:
+          dockerfile: app/Dockerfile
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@c47758b77c9736f4b2ef4073d4d51994fabfe349 # v3.7.1
+
+      - name: Log in to GitHub Container Registry (GHCR)
+        uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567 # v3.3.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build & Push Container Image by Digest
+        id: push
+        uses: docker/build-push-action@ca877d9245402d1537745e0e356eab1d92be34c8 # v6.13.0
+        with:
+          context: ./app
+          file: ./app/Dockerfile
+          push: true
+          tags: ghcr.io/${{ github.repository }}:sha-${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Generate CycloneDX SBOM (Syft)
+        uses: anchore/sbom-action@7ccf588e3cf3cc2611714c2eeae48550fbc17552 # v0.17.9
+        with:
+          image: ghcr.io/${{ github.repository }}@${{ steps.push.outputs.digest }}
+          format: cyclonedx-json
+          output-file: sbom.cdx.json
+
+      - name: Container Vulnerability Gate (Trivy)
+        uses: aquasecurity/trivy-action@18f2510ee396bbf400dbea0c74996924b132800a # v0.28.0
+        with:
+          image-ref: ghcr.io/${{ github.repository }}@${{ steps.push.outputs.digest }}
+          severity: CRITICAL,HIGH
+          exit-code: 1
+          ignore-unfixed: true
+
+      - name: Attest SLSA Build Provenance
+        uses: actions/attest-build-provenance@c908681a9a217c843825f3c0516b3f9ff482ae72 # v2.2.0
+        with:
+          subject-name: ghcr.io/${{ github.repository }}
+          subject-digest: ${{ steps.push.outputs.digest }}
+          push-to-registry: true
+
+      - name: Attest CycloneDX SBOM
+        uses: actions/attest@3188849479b1836a9926cb077d853e34efdf3146 # v4.0.0
+        with:
+          subject-name: ghcr.io/${{ github.repository }}
+          subject-digest: ${{ steps.push.outputs.digest }}
+          predicate-type: "https://cyclonedx.org/bom"
+          predicate-path: sbom.cdx.json
+          push-to-registry: true
+
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@d7d6bc7722e3daa8354c50bcb388bd794ffbed77 # v3.7.0
+
+      - name: Keyless Image Signing (Sigstore/Fulcio/Rekor)
+        run: |
+          cosign sign --yes ghcr.io/${{ github.repository }}@${{ steps.push.outputs.digest }}
+
+      - name: Post SBOM to Dependency-Track
+        if: vars.DTRACK_URL != ''
+        run: |
+          curl -sf -X POST "$DTRACK_URL/api/v1/bom" \
+            -H "X-Api-Key: $DTRACK_API_KEY" \
+            -F "autoCreate=true" \
+            -F "projectName=${{ github.event.repository.name }}" \
+            -F "projectVersion=${{ github.sha }}" \
+            -F "bom=@sbom.cdx.json"
+        env:
+          DTRACK_URL: ${{ vars.DTRACK_URL }}
+          DTRACK_API_KEY: ${{ secrets.DTRACK_API_KEY }}
+
+  promote-staging:
+    name: Verify & Promote to Staging Registry
+    needs: build-scan-attest
+    runs-on: ubuntu-24.04
+    environment: staging
+    permissions:
+      packages: write
+      id-token: write
+    steps:
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@d7d6bc7722e3daa8354c50bcb388bd794ffbed77 # v3.7.0
+
+      - name: Verify Keyless OIDC Signature
+        run: |
+          cosign verify \
+            --certificate-identity-regexp "^https://github.com/${{ github.repository }}/.github/workflows/.*@refs/heads/main$" \
+            --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+            ghcr.io/${{ github.repository }}@${{ needs.build-scan-attest.outputs.digest }}
+
+      - name: Setup Crane CLI
+        run: |
+          go install github.com/google/go-containerregistry/cmd/crane@latest
+
+      - name: Digest-Preserving Staging Promotion
+        run: |
+          crane copy \
+            ghcr.io/${{ github.repository }}@${{ needs.build-scan-attest.outputs.digest }} \
+            ghcr.io/${{ github.repository }}-staging@${{ needs.build-scan-attest.outputs.digest }}

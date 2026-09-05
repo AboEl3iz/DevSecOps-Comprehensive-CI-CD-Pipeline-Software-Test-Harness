@@ -1,0 +1,24 @@
+linters-settings:
+  gosec:
+    severity: "medium"
+    confidence: "medium"
+  govulncheck:
+    mode: binary
+  errcheck:
+    check-type-assertions: true
+    check-blank: true
+
+linters:
+  enable:
+    - gosec
+    - errcheck
+    - gosimple
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
+
+run:
+  timeout: 5m
+  issues-exit-code: 1
+  tests: true

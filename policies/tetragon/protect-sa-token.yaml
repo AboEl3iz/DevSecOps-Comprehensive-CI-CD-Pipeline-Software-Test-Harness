@@ -1,0 +1,28 @@
+apiVersion: cilium.io/v1alpha1
+kind: TracingPolicy
+metadata:
+  name: protect-sa-token
+  annotations:
+    description: "eBPF rule: Sigkill any unauthorized binary reading Kubernetes service account token"
+spec:
+  kprobes:
+    - call: "security_file_permission"
+      syscall: false
+      args:
+        - index: 0
+          type: "file"
+        - index: 1
+          type: "int"
+      selectors:
+        - matchArgs:
+            - index: 0
+              operator: "Postfix"
+              values:
+                - "/var/run/secrets/kubernetes.io/serviceaccount/token"
+          matchBinaries:
+            - operator: "NotIn"
+              values:
+                - "/usr/bin/kubelet"
+                - "/app"
+          matchActions:
+            - action: Sigkill

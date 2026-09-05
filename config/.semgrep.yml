@@ -1,0 +1,25 @@
+rules:
+  - id: hardcoded-secret-assignment
+    patterns:
+      - pattern-either:
+          - pattern: $KEY = "..."
+          - pattern: const $KEY = "..."
+      - pattern-regex: (?i)(password|passwd|secret|api_key|token)
+    message: "Potential hardcoded credential or secret found in Go source code."
+    severity: ERROR
+    languages: [go]
+
+  - id: unhandled-error-http
+    pattern: http.ListenAndServe(...)
+    message: "Ensure http.ListenAndServe error return value is properly checked or handled."
+    severity: WARNING
+    languages: [go]
+
+  - id: insecure-tls-min-version
+    pattern: |
+      &tls.Config{
+        MinVersion: tls.VersionTLS10,
+      }
+    message: "TLS 1.0 is deprecated and insecure. Use tls.VersionTLS12 or higher."
+    severity: ERROR
+    languages: [go]

@@ -1,0 +1,27 @@
+# Gitleaks security rules configuration
+title = "DevSecOps Gitleaks Custom Rules"
+
+[allowlist]
+description = "Global allowlist"
+paths = [
+    '''gitleaks\.toml$''',
+    '''go\.sum$''',
+]
+
+[[rules]]
+id = "generic-api-key"
+description = "Generic API Key leak detection"
+regex = '''(?i)(api[_-]?key|secret[_-]?key|token)\s*[:=]\s*["']([a-zA-Z0-9_\-]{20,})["']'''
+tags = ["key", "generic", "secret"]
+
+[[rules]]
+id = "private-key"
+description = "Private Key leak detection"
+regex = '''-----BEGIN (RSA|EC|OPENSSH|DSA|PGP) PRIVATE KEY-----'''
+tags = ["key", "private-key"]
+
+[[rules]]
+id = "slack-webhook"
+description = "Slack Incoming Webhook URL"
+regex = '''https://hooks\.slack\.com/services/T[a-zA-Z0-9_]{8}/B[a-zA-Z0-9_]{8,12}/[a-zA-Z0-9_]{24}'''
+tags = ["slack", "webhook"]
